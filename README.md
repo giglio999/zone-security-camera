@@ -1,17 +1,75 @@
 # Zone
 
-Sistema web de câmera de segurança inteligente para ambientes com baixo fluxo de pessoas.
+Zone é um sistema web de câmera de segurança inteligente voltado para ambientes com baixo fluxo de pessoas, como escritórios, escolas no período noturno e setores administrativos. O sistema usa a câmera do navegador para detectar pessoas em tempo real, manter um ID por pessoa acompanhada e disparar alertas visuais e sonoros conforme regras simples de segurança.
 
-## Recursos
+## Principais recursos
 
 - Detecção de pessoas em tempo real pela câmera.
-- Tracking básico com ID por pessoa.
-- Detecção complementar por rosto para casos de pessoa parcialmente visível.
-- Zona restrita desenhável.
-- Alertas visuais para intrusão, pessoa parada e movimento fora do horário.
-- Opção de alerta sonoro para intrusão.
-- Gate de acesso por código configurado via variável de ambiente.
-- Headers de segurança para Vercel e Netlify.
+- Tracking básico com ID estável por pessoa.
+- Detecção complementar por rosto para reconhecer pessoas parcialmente visíveis.
+- Zona restrita desenhável diretamente sobre o vídeo.
+- Alerta de pessoa parada por tempo configurável.
+- Modo fora de horário, que alerta quando qualquer pessoa é detectada.
+- Indicador azul para movimento sem pessoa detectada.
+- Lista simples de eventos com tipo de alerta, horário e ID.
+- Opção de som para alertas de intrusão.
+- Tela de acesso protegida por código configurado via variável de ambiente.
+
+## Arquitetura do projeto
+
+O Zone é uma aplicação frontend construída com React e Vite. Toda a análise de vídeo acontece no navegador, sem envio das imagens para um backend próprio.
+
+Estrutura principal:
+
+- `src/App.tsx`: interface principal, painel de regras, eventos, status do sistema e controle de acesso.
+- `src/components/CameraTracker.tsx`: captura da câmera, detecção, tracking, desenho da zona restrita e disparo das regras.
+- `src/components/trackingUtils.ts`: associação entre detecções e pessoas já rastreadas, mantendo IDs.
+- `src/components/KalmanFilter.ts`: suavização das bounding boxes e predição em pequenas perdas de detecção.
+- `src/components/motionUtils.ts`: detecção simples de movimento sem pessoa.
+- `public/_headers`: headers de segurança para Netlify.
+- `vercel.json`: headers de segurança para Vercel.
+- `.github/workflows/deploy-pages.yml`: pipeline de build e publicação no GitHub Pages.
+
+Tecnologias usadas:
+
+- React 19
+- Vite
+- TypeScript
+- Tailwind CSS
+- TensorFlow.js
+- COCO-SSD
+- BlazeFace
+- Lucide React
+- GitHub Actions
+- GitHub Pages
+
+## Implantação
+
+A aplicação foi hospedada no GitHub Pages:
+
+```text
+https://giglio999.github.io/zone-security-camera/
+```
+
+O deploy é feito automaticamente com GitHub Actions. A cada push na branch `main`, o workflow:
+
+1. Instala as dependências com `npm ci`.
+2. Executa auditoria de dependências com `npm run audit`.
+3. Executa a checagem TypeScript com `npm run lint`.
+4. Gera a build de produção com `npm run build`.
+5. Publica a pasta `dist` no GitHub Pages.
+
+Como o projeto usa Vite, o build define o caminho base:
+
+```text
+VITE_BASE_PATH=/zone-security-camera/
+```
+
+O código de acesso do sistema é configurado no GitHub como secret do Actions:
+
+```text
+VITE_ZONE_ACCESS_CODE
+```
 
 ## Rodar localmente
 
@@ -21,97 +79,33 @@ Sistema web de câmera de segurança inteligente para ambientes com baixo fluxo 
 npm install
 ```
 
-2. Crie um arquivo `.env.local` baseado em `.env.example`:
+2. Crie o arquivo `.env.local`:
 
 ```powershell
 Copy-Item .env.example .env.local
 ```
 
-3. Edite `.env.local` e defina um código forte:
+3. Configure um código de acesso:
 
 ```text
 VITE_ZONE_ACCESS_CODE="use-um-codigo-longo-e-privado"
 ```
 
-4. Rode o app:
+4. Rode o projeto:
 
 ```powershell
 npm run dev
 ```
 
-## Deploy no GitHub Pages
-
-Este projeto usa Vite/React. Por isso, o GitHub Pages deve publicar a pasta `dist` gerada pelo build, não os arquivos `src` diretamente. O workflow em `.github/workflows/deploy-pages.yml` faz isso automaticamente.
-
-### Passo 1: Repositório
-
-O repositório deve estar no GitHub como:
-
-```text
-https://github.com/giglio999/zone-security-camera
-```
-
-Se criar outro repositório, ajuste `VITE_BASE_PATH` no workflow para o nome dele.
-
-### Passo 2: Configurar o código de acesso
-
-No GitHub:
-
-1. Abra o repositório.
-2. Vá em `Settings`.
-3. Entre em `Secrets and variables` > `Actions`.
-4. Clique em `New repository secret`.
-5. Crie o secret:
-
-```text
-Name: VITE_ZONE_ACCESS_CODE
-Value: use-um-codigo-longo-e-privado
-```
-
-### Passo 3: Ativar GitHub Pages
-
-No repositório:
-
-1. Vá em `Settings`.
-2. Clique em `Pages`.
-3. Em `Source`, selecione `GitHub Actions`.
-4. Salve.
-
-### Passo 4: Enviar alterações
-
-```powershell
-git add .
-git commit -m "Configure GitHub Pages deploy"
-git push
-```
-
-O deploy será executado automaticamente pela aba `Actions`.
-
-### Passo 5: Acessar
-
-Depois de 1 a 2 minutos, o sistema deve ficar disponível em:
-
-```text
-https://giglio999.github.io/zone-security-camera/
-```
-
-## Deploy em Vercel ou Netlify
-
-Configuração comum:
-
-```text
-Build command: npm run build
-Output directory: dist
-```
-
-Defina `VITE_ZONE_ACCESS_CODE` nas variáveis de ambiente do provedor.
-
 ## Segurança
 
-- Use HTTPS. Vercel e Netlify fornecem HTTPS automaticamente.
-- `vercel.json` e `public/_headers` configuram CSP, HSTS, anti-clickjacking e Permissions-Policy.
-- O código de acesso é uma barreira básica para deploy estático. Para produção real, use autenticação no servidor ou proteção de acesso do provedor.
-- Eventos ficam somente no navegador. Para auditoria real, use backend e banco de dados.
+- O acesso ao painel exige `VITE_ZONE_ACCESS_CODE`.
+- A câmera depende da permissão explícita do navegador.
+- Headers de segurança foram configurados para Vercel e Netlify.
+- O GitHub Pages usa HTTPS automaticamente.
+- O histórico de eventos fica apenas no navegador.
+
+Observação: por ser uma aplicação frontend estática, o código de acesso é uma barreira básica para demonstração e uso controlado. Para produção real, o ideal é usar autenticação em servidor, SSO, API gateway ou proteção de acesso do provedor.
 
 ## Verificações
 
