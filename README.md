@@ -39,7 +39,63 @@ VITE_ZONE_ACCESS_CODE="use-um-codigo-longo-e-privado"
 npm run dev
 ```
 
-## Deploy
+## Deploy no GitHub Pages
+
+Este projeto usa Vite/React. Por isso, o GitHub Pages deve publicar a pasta `dist` gerada pelo build, não os arquivos `src` diretamente. O workflow em `.github/workflows/deploy-pages.yml` faz isso automaticamente.
+
+### Passo 1: Repositório
+
+O repositório deve estar no GitHub como:
+
+```text
+https://github.com/giglio999/zone-security-camera
+```
+
+Se criar outro repositório, ajuste `VITE_BASE_PATH` no workflow para o nome dele.
+
+### Passo 2: Configurar o código de acesso
+
+No GitHub:
+
+1. Abra o repositório.
+2. Vá em `Settings`.
+3. Entre em `Secrets and variables` > `Actions`.
+4. Clique em `New repository secret`.
+5. Crie o secret:
+
+```text
+Name: VITE_ZONE_ACCESS_CODE
+Value: use-um-codigo-longo-e-privado
+```
+
+### Passo 3: Ativar GitHub Pages
+
+No repositório:
+
+1. Vá em `Settings`.
+2. Clique em `Pages`.
+3. Em `Source`, selecione `GitHub Actions`.
+4. Salve.
+
+### Passo 4: Enviar alterações
+
+```powershell
+git add .
+git commit -m "Configure GitHub Pages deploy"
+git push
+```
+
+O deploy será executado automaticamente pela aba `Actions`.
+
+### Passo 5: Acessar
+
+Depois de 1 a 2 minutos, o sistema deve ficar disponível em:
+
+```text
+https://giglio999.github.io/zone-security-camera/
+```
+
+## Deploy em Vercel ou Netlify
 
 Configuração comum:
 
@@ -48,7 +104,7 @@ Build command: npm run build
 Output directory: dist
 ```
 
-Defina `VITE_ZONE_ACCESS_CODE` nas variáveis de ambiente do provedor de deploy.
+Defina `VITE_ZONE_ACCESS_CODE` nas variáveis de ambiente do provedor.
 
 ## Segurança
 

@@ -14,6 +14,7 @@
 - This is a client-side application. A frontend access code is useful for a demo or controlled deploy, but it is not equivalent to server-side authentication.
 - Event history is stored in memory only. It is not tamper-proof and is not an audit log.
 - For real production use, protect the deployment with provider auth, SSO, a backend session system, or an API gateway.
+- In GitHub Pages, `VITE_ZONE_ACCESS_CODE` is embedded in the frontend bundle during build. Treat it as a basic access barrier, not as a strong secret.
 
 ## Recommended Deployment Settings
 
