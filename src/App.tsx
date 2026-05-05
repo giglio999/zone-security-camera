@@ -16,6 +16,8 @@ const EVENT_LABELS: Record<SecurityAlert['type'], string> = {
 };
 
 export default function App() {
+  const accessCode = import.meta.env.VITE_ZONE_ACCESS_CODE?.trim() || '';
+  const isAccessConfigured = accessCode.length >= 8;
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [peopleCount, setPeopleCount] = useState(0);
   const [restrictedZone, setRestrictedZone] = useState<RestrictedZone | null>(null);
@@ -25,6 +27,9 @@ export default function App() {
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [events, setEvents] = useState<SecurityEvent[]>([]);
   const [activeRuleMessages, setActiveRuleMessages] = useState<string[]>([]);
+  const [accessInput, setAccessInput] = useState('');
+  const [accessError, setAccessError] = useState('');
+  const [isAuthenticated, setIsAuthenticated] = useState(() => sessionStorage.getItem('zone.authenticated') === 'true');
   const activeMessagesKeyRef = useRef('');
   const audioContextRef = useRef<AudioContext | null>(null);
 
@@ -106,6 +111,73 @@ export default function App() {
     setRestrictedZone(null);
     setIsDrawingZone(false);
   };
+
+  const handleAccessSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!isAccessConfigured) return;
+
+    if (accessInput === accessCode) {
+      sessionStorage.setItem('zone.authenticated', 'true');
+      setIsAuthenticated(true);
+      setAccessInput('');
+      setAccessError('');
+      return;
+    }
+
+    setAccessError('Código de acesso inválido');
+  };
+
+  if (!isAccessConfigured) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.13),transparent_34%),#09090b] p-6 text-zinc-100">
+        <section className="w-full max-w-md rounded-lg border border-amber-400/30 bg-zinc-950/90 p-6 shadow-2xl">
+          <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-lg border border-amber-400/30 bg-amber-400/10">
+            <ShieldAlert className="h-5 w-5 text-amber-200" />
+          </div>
+          <h1 className="text-xl font-semibold">Configuração de segurança necessária</h1>
+          <p className="mt-3 text-sm leading-6 text-zinc-400">
+            Defina a variável de ambiente <span className="font-mono text-amber-200">VITE_ZONE_ACCESS_CODE</span> com pelo menos 8 caracteres antes de publicar ou usar o painel.
+          </p>
+        </section>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.13),transparent_34%),#09090b] p-6 text-zinc-100">
+        <form onSubmit={handleAccessSubmit} className="w-full max-w-sm rounded-lg border border-zinc-800 bg-zinc-950/90 p-6 shadow-2xl">
+          <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-lg border border-sky-400/30 bg-sky-400/10">
+            <span className="text-lg font-black tracking-tight text-sky-200">Z</span>
+          </div>
+          <h1 className="text-xl font-semibold">Acesso ao Zone</h1>
+          <p className="mt-2 text-sm text-zinc-400">Digite o código de acesso para abrir o painel de monitoramento.</p>
+          <label className="mt-5 block">
+            <span className="text-sm font-medium text-zinc-300">Código de acesso</span>
+            <input
+              type="password"
+              value={accessInput}
+              onChange={(event) => {
+                setAccessInput(event.target.value);
+                setAccessError('');
+              }}
+              className="mt-2 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100 outline-none transition focus:border-sky-400"
+              autoComplete="current-password"
+              autoFocus
+            />
+          </label>
+          {accessError && <p className="mt-3 text-sm text-rose-300">{accessError}</p>}
+          <button
+            type="submit"
+            className="mt-5 w-full rounded-lg border border-sky-400/30 bg-sky-400/10 px-4 py-2 text-sm font-semibold text-sky-100 transition hover:bg-sky-400/15"
+          >
+            Entrar
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.13),transparent_34%),#09090b] text-zinc-100">
