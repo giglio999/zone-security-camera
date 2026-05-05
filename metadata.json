@@ -1,0 +1,5 @@
+{
+  "name": "Smart Counting System",
+  "description": "Real-time people and object counting with dashboard and heatmap.",
+  "requestFramePermissions": ["camera"]
+}
