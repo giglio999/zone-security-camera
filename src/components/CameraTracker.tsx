@@ -153,8 +153,11 @@ function overlapStats(a: [number, number, number, number], b: [number, number, n
 
 function looksLikeSamePerson(a: [number, number, number, number], b: [number, number, number, number]) {
   const stats = overlapStats(a, b);
-  if (stats.iou > 0.12 || stats.firstContainment > 0.24 || stats.secondContainment > 0.24) return true;
-  return stats.distance < stats.minDiagonal * 0.45 && stats.maxAreaRatio < 3.5;
+  const strongOverlap = stats.iou > 0.32;
+  const nestedDetection = stats.firstContainment > 0.65 || stats.secondContainment > 0.65;
+  const almostSameCenter = stats.distance < stats.minDiagonal * 0.2 && stats.maxAreaRatio < 2.3;
+
+  return strongOverlap || nestedDetection || almostSameCenter;
 }
 
 function mergePersonDetections(predictions: PersonDetection[]) {
@@ -235,9 +238,12 @@ function shouldSuppressNewTrack(
     const referenceBox = predicted?.bbox || track.bbox;
     const stats = overlapStats(prediction.bbox, referenceBox);
     const referenceStats = boxStats(referenceBox);
-    const closeCenters = stats.distance < Math.max(referenceStats.diagonal, predictionStats.diagonal) * 0.4;
+    const closeCenters = stats.distance < Math.max(referenceStats.diagonal, predictionStats.diagonal) * 0.24;
+    const strongDuplicateOverlap = stats.iou > 0.34;
+    const nestedDuplicate = stats.firstContainment > 0.6 || stats.secondContainment > 0.6;
+    const sameCenterDuplicate = closeCenters && stats.maxAreaRatio < 2.4;
 
-    if (stats.iou > 0.08 || stats.firstContainment > 0.18 || stats.secondContainment > 0.18 || (closeCenters && stats.maxAreaRatio < 4)) {
+    if (strongDuplicateOverlap || nestedDuplicate || sameCenterDuplicate) {
       return true;
     }
   }
