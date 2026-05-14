@@ -57,10 +57,10 @@ interface CameraTrackerProps {
 const PERSON_CONFIDENCE_THRESHOLD = 0.42;
 const FACE_CONFIDENCE_THRESHOLD = 0.72;
 const MIN_HITS_TO_DISPLAY = 2;
-const MAX_LOST_FRAMES = 180;
-const MAX_TIME_LOST_MS = 7000;
-const VISIBLE_TRACK_HOLD_MS = 7000;
-const TRACK_MOTION_SUPPORT_THRESHOLD = 3.5;
+const MAX_LOST_FRAMES = 360;
+const MAX_TIME_LOST_MS = 8500;
+const VISIBLE_TRACK_HOLD_MS = 6500;
+const TRACK_MOTION_SUPPORT_THRESHOLD = 5;
 const STILL_MIN_PX = 18;
 const STILL_FILTER_ALPHA = 0.28;
 const MOVING_FRAMES_TO_RESET = 4;
@@ -292,17 +292,17 @@ function isHumanLikeBodyDetection(
 
   if (hasFaceSupport(prediction.bbox, faceDetections)) return true;
   if (width < minFrameDimension * 0.035 || height < minFrameDimension * 0.085) return false;
-  if (aspectRatio > 1.05) return false;
-  if (aspectRatio > 0.9 && heightRatio < 0.42) return false;
-  if (widthRatio > 0.72 && heightRatio < 0.58) return false;
+  if (aspectRatio > 0.92 && heightRatio < 0.52) return false;
+  if (aspectRatio > 1.02) return false;
+  if (widthRatio > 0.7 && heightRatio < 0.72) return false;
 
-  const edgeFragment = touchesFrameEdge && areaRatio < 0.2 && heightRatio < 0.38 && aspectRatio > 0.7;
+  const edgeFragment = touchesFrameEdge && areaRatio < 0.28 && (aspectRatio > 0.68 || heightRatio < 0.46);
   if (edgeFragment) return false;
 
-  const slenderBody = aspectRatio <= 0.72 && heightRatio >= 0.18 && areaRatio >= 0.012 && score >= 0.48;
-  const upperBody = aspectRatio <= 0.9 && heightRatio >= 0.28 && areaRatio >= 0.035 && score >= 0.55;
-  const closeBody = aspectRatio <= 0.96 && heightRatio >= 0.46 && areaRatio >= 0.09 && score >= 0.64;
-  const strongPartialBody = aspectRatio <= 0.86 && heightRatio >= 0.24 && areaRatio >= 0.025 && score >= 0.82;
+  const slenderBody = aspectRatio <= 0.66 && heightRatio >= 0.16 && areaRatio >= 0.01 && score >= 0.46;
+  const upperBody = aspectRatio <= 0.85 && heightRatio >= 0.27 && areaRatio >= 0.035 && score >= 0.52;
+  const closeBody = aspectRatio <= 0.82 && heightRatio >= 0.5 && areaRatio >= 0.12 && score >= 0.68;
+  const strongPartialBody = aspectRatio <= 0.78 && heightRatio >= 0.24 && areaRatio >= 0.025 && score >= 0.84;
 
   return slenderBody || upperBody || closeBody || strongPartialBody;
 }
@@ -323,12 +323,12 @@ function canStartNewPersonTrack(
     touchesFrameEdge
   } = getDetectionMetrics(prediction, videoWidth, videoHeight);
 
-  const tallBody = aspectRatio <= 0.72 && heightRatio >= 0.3 && areaRatio >= 0.025 && score >= 0.55;
-  const clearTorso = aspectRatio <= 0.86 && heightRatio >= 0.42 && areaRatio >= 0.055 && score >= 0.62;
-  const closeConfirmedBody = aspectRatio <= 0.94 && heightRatio >= 0.58 && areaRatio >= 0.14 && score >= 0.72;
+  const tallBody = aspectRatio <= 0.56 && heightRatio >= 0.36 && areaRatio >= 0.032 && score >= 0.58;
+  const clearTorso = aspectRatio <= 0.68 && heightRatio >= 0.52 && areaRatio >= 0.075 && score >= 0.68;
+  const closeConfirmedBody = aspectRatio <= 0.7 && heightRatio >= 0.72 && areaRatio >= 0.22 && score >= 0.82;
 
-  if (touchesFrameEdge && widthRatio > 0.55 && heightRatio < 0.55) return false;
-  if (aspectRatio > 0.98) return false;
+  if (touchesFrameEdge && widthRatio > 0.3 && heightRatio < 0.78) return false;
+  if (aspectRatio > 0.72) return false;
 
   return tallBody || clearTorso || closeConfirmedBody;
 }
@@ -346,14 +346,14 @@ function canUpdateTrackWithDetection(
   const trackStats = boxStats(track.bbox);
   const trackAspect = track.bbox[2] / Math.max(1, track.bbox[3]);
   const areaRatioToTrack = metrics.areaRatio / Math.max(0.001, trackStats.area / Math.max(1, videoWidth * videoHeight));
-  const centerMovedTooMuch = stats.distance > trackStats.diagonal * 0.65 && stats.iou < 0.06;
-  const likelyArmOrHand = metrics.aspectRatio > 1.05
-    || (metrics.touchesFrameEdge && metrics.widthRatio > 0.45 && metrics.heightRatio < 0.5)
-    || (areaRatioToTrack > 3.5 && metrics.heightRatio < 0.58)
-    || (metrics.aspectRatio > trackAspect * 1.9 && stats.iou < 0.12);
+  const centerMovedTooMuch = stats.distance > trackStats.diagonal * 0.38 && stats.iou < 0.12;
+  const likelyArmOrHand = metrics.aspectRatio > 0.78
+    || (metrics.touchesFrameEdge && metrics.heightRatio < 0.72)
+    || (areaRatioToTrack > 2.4 && metrics.heightRatio < 0.85)
+    || (metrics.aspectRatio > trackAspect * 1.55 && stats.iou < 0.22);
 
   if (likelyArmOrHand) return false;
-  if (centerMovedTooMuch && metrics.score < 0.72) return false;
+  if (centerMovedTooMuch && metrics.score < 0.82) return false;
 
   return true;
 }
