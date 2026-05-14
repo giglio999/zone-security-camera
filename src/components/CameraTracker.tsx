@@ -59,7 +59,6 @@ const FACE_CONFIDENCE_THRESHOLD = 0.72;
 const MIN_HITS_TO_DISPLAY = 2;
 const MAX_LOST_FRAMES = 95;
 const MAX_TIME_LOST_MS = 4800;
-const VISIBLE_TRACK_HOLD_MS = 3200;
 const STILL_MIN_PX = 18;
 const STILL_FILTER_ALPHA = 0.28;
 const MOVING_FRAMES_TO_RESET = 4;
@@ -188,7 +187,6 @@ function mergePersonDetections(predictions: PersonDetection[]) {
     const maxY = Math.max(existing.bbox[1] + existing.bbox[3], prediction.bbox[1] + prediction.bbox[3]);
     existing.bbox = [minX, minY, maxX - minX, maxY - minY];
     existing.score = Math.max(existing.score, prediction.score);
-    existing.source = existing.source === 'body' || prediction.source === 'body' ? 'body' : 'face';
   });
 
   return merged;
@@ -262,44 +260,18 @@ function isHumanLikeBodyDetection(
 
   if (hasFaceSupport(prediction.bbox, faceDetections)) return true;
   if (width < minFrameDimension * 0.035 || height < minFrameDimension * 0.085) return false;
-  if (aspectRatio > 1.08) return false;
+  if (heightRatio < 0.16 && score < 0.72) return false;
+  if (areaRatio < 0.012 && score < 0.76) return false;
 
-  const edgeFragment = touchesFrameEdge && areaRatio < 0.22 && (aspectRatio > 0.78 || heightRatio < 0.34);
-  if (edgeFragment) return false;
+  const compactObject = aspectRatio > 0.72 && heightRatio < 0.42 && areaRatio < 0.16;
+  const wideObject = aspectRatio > 1.05;
+  const smallEdgeFragment = touchesFrameEdge && areaRatio < 0.08 && heightRatio < 0.32;
 
-  const slenderBody = aspectRatio <= 0.66 && heightRatio >= 0.16 && areaRatio >= 0.01 && score >= 0.46;
-  const upperBody = aspectRatio <= 0.85 && heightRatio >= 0.27 && areaRatio >= 0.035 && score >= 0.52;
-  const closeBody = aspectRatio <= 1.0 && heightRatio >= 0.38 && areaRatio >= 0.09 && score >= 0.58;
-  const strongPartialBody = aspectRatio <= 0.92 && heightRatio >= 0.24 && areaRatio >= 0.025 && score >= 0.82;
+  if (compactObject && score < 0.86) return false;
+  if (wideObject && score < 0.92) return false;
+  if (smallEdgeFragment && score < 0.9) return false;
 
-  return slenderBody || upperBody || closeBody || strongPartialBody;
-}
-
-function supportsExistingTrack(
-  prediction: PersonDetection,
-  trackBox: [number, number, number, number]
-) {
-  const stats = overlapStats(prediction.bbox, trackBox);
-  const trackStats = boxStats(trackBox);
-  const predictionCenter = getCenter(prediction.bbox);
-  const nearTrackCenter = stats.distance < trackStats.diagonal * 0.55;
-  const overlapsTrack = stats.iou > 0.04 || stats.firstContainment > 0.12 || stats.secondContainment > 0.12;
-
-  return prediction.score > 0.38 && (overlapsTrack || nearTrackCenter || isPointInsideBox(predictionCenter, trackBox));
-}
-
-function isOcclusionSupportDetection(
-  prediction: PersonDetection,
-  currentTracked: Map<number, TrackedObject>,
-  now: number
-) {
-  for (const track of currentTracked.values()) {
-    if (track.class !== 'person') continue;
-    if (now - track.lastSeen > VISIBLE_TRACK_HOLD_MS) continue;
-    if (supportsExistingTrack(prediction, track.bbox)) return true;
-  }
-
-  return false;
+  return true;
 }
 
 function shouldSuppressNewTrack(
@@ -566,7 +538,6 @@ export function CameraTracker({
     let isActive = true;
     let frameIndex = 0;
     let lastPredictions: PersonDetection[] = [];
-    let lastOcclusionSupportPredictions: PersonDetection[] = [];
 
     const emitRuleEvent = (type: AlertType, trackId: number, now: number) => {
       const key = `${trackId}:${type}`;
@@ -610,29 +581,21 @@ export function CameraTracker({
         const facePersonPredictions = facePredictions
           .map(face => faceToPersonDetection(face, canvas.width, canvas.height))
           .filter((prediction): prediction is PersonDetection => Boolean(prediction));
-        const rawPersonPredictions = objectPredictions
-          .filter(prediction => prediction.class === 'person' && prediction.score > PERSON_CONFIDENCE_THRESHOLD)
-          .map(prediction => ({
-            ...prediction,
-            bbox: prediction.bbox as [number, number, number, number],
-            source: 'body' as const
-          }));
-        const personPredictions: PersonDetection[] = [];
-        const occlusionSupportPredictions: PersonDetection[] = [];
-
-        rawPersonPredictions.forEach(prediction => {
-          if (isHumanLikeBodyDetection(prediction, canvas.width, canvas.height, facePersonPredictions)) {
-            personPredictions.push(prediction);
-            return;
-          }
-
-          if (isOcclusionSupportDetection(prediction, trackedObjectsRef.current, now)) {
-            occlusionSupportPredictions.push(prediction);
-          }
-        });
+        const personPredictions = objectPredictions
+            .filter(prediction => prediction.class === 'person' && prediction.score > PERSON_CONFIDENCE_THRESHOLD)
+            .map(prediction => ({
+              ...prediction,
+              bbox: prediction.bbox as [number, number, number, number],
+              source: 'body' as const
+            }))
+            .filter(prediction => isHumanLikeBodyDetection(
+              prediction,
+              canvas.width,
+              canvas.height,
+              facePersonPredictions
+            ));
 
         lastPredictions = mergePersonDetections([...personPredictions, ...facePersonPredictions]);
-        lastOcclusionSupportPredictions = occlusionSupportPredictions;
       }
       frameIndex++;
 
@@ -726,17 +689,12 @@ export function CameraTracker({
           const center = getCenter(predicted.bbox);
           const path = [...track.path, [center.x, center.y] as [number, number]];
           if (path.length > 40) path.shift();
-          const occlusionSupport = lastOcclusionSupportPredictions.find(prediction => (
-            supportsExistingTrack(prediction, predicted.bbox) || supportsExistingTrack(prediction, track.bbox)
-          ));
 
           newTracked.set(trackId, {
             ...track,
             bbox: predicted.bbox,
             path,
-            lastSeen: occlusionSupport ? now : track.lastSeen,
-            lostFrames: occlusionSupport ? Math.min(lostFrames, 8) : lostFrames,
-            score: occlusionSupport ? Math.max(track.score * 0.96, occlusionSupport.score * 0.7) : track.score
+            lostFrames
           });
         } else {
           stationaryRef.current.delete(trackId);
@@ -751,7 +709,7 @@ export function CameraTracker({
       const visibleTracks = Array.from(newTracked.values()).filter(track => (
         track.class === 'person'
         && track.hitStreak >= MIN_HITS_TO_DISPLAY
-        && now - track.lastSeen < VISIBLE_TRACK_HOLD_MS
+        && now - track.lastSeen < 1800
       ));
       if (visibleTracks.length > 0) {
         lastHumanSeenAtRef.current = now;
