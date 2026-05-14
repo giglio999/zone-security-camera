@@ -57,10 +57,9 @@ interface CameraTrackerProps {
 const PERSON_CONFIDENCE_THRESHOLD = 0.42;
 const FACE_CONFIDENCE_THRESHOLD = 0.72;
 const MIN_HITS_TO_DISPLAY = 2;
-const MAX_LOST_FRAMES = 360;
-const MAX_TIME_LOST_MS = 8500;
-const VISIBLE_TRACK_HOLD_MS = 6500;
-const TRACK_MOTION_SUPPORT_THRESHOLD = 5;
+const MAX_LOST_FRAMES = 95;
+const MAX_TIME_LOST_MS = 4800;
+const VISIBLE_TRACK_HOLD_MS = 3200;
 const STILL_MIN_PX = 18;
 const STILL_FILTER_ALPHA = 0.28;
 const MOVING_FRAMES_TO_RESET = 4;
@@ -247,115 +246,33 @@ function hasFaceSupport(
   });
 }
 
-function getDetectionMetrics(
-  prediction: PersonDetection,
-  videoWidth: number,
-  videoHeight: number
-) {
-  const [x, y, width, height] = prediction.bbox;
-  const frameArea = Math.max(1, videoWidth * videoHeight);
-  const minFrameDimension = Math.max(1, Math.min(videoWidth, videoHeight));
-
-  return {
-    x,
-    y,
-    width,
-    height,
-    score: prediction.score || 0,
-    minFrameDimension,
-    areaRatio: (width * height) / frameArea,
-    heightRatio: height / Math.max(1, videoHeight),
-    widthRatio: width / Math.max(1, videoWidth),
-    aspectRatio: width / Math.max(1, height),
-    touchesFrameEdge: x <= 2 || y <= 2 || x + width >= videoWidth - 2 || y + height >= videoHeight - 2
-  };
-}
-
 function isHumanLikeBodyDetection(
   prediction: PersonDetection,
   videoWidth: number,
   videoHeight: number,
   faceDetections: PersonDetection[]
 ) {
-  const metrics = getDetectionMetrics(prediction, videoWidth, videoHeight);
-  const {
-    width,
-    height,
-    score,
-    minFrameDimension,
-    areaRatio,
-    heightRatio,
-    widthRatio,
-    aspectRatio,
-    touchesFrameEdge
-  } = metrics;
+  const [x, y, width, height] = prediction.bbox;
+  const score = prediction.score || 0;
+  const minFrameDimension = Math.max(1, Math.min(videoWidth, videoHeight));
+  const areaRatio = (width * height) / Math.max(1, videoWidth * videoHeight);
+  const heightRatio = height / Math.max(1, videoHeight);
+  const aspectRatio = width / Math.max(1, height);
+  const touchesFrameEdge = x <= 2 || y <= 2 || x + width >= videoWidth - 2 || y + height >= videoHeight - 2;
 
   if (hasFaceSupport(prediction.bbox, faceDetections)) return true;
   if (width < minFrameDimension * 0.035 || height < minFrameDimension * 0.085) return false;
-  if (aspectRatio > 0.92 && heightRatio < 0.52) return false;
-  if (aspectRatio > 1.02) return false;
-  if (widthRatio > 0.7 && heightRatio < 0.72) return false;
+  if (aspectRatio > 1.08) return false;
 
-  const edgeFragment = touchesFrameEdge && areaRatio < 0.28 && (aspectRatio > 0.68 || heightRatio < 0.46);
+  const edgeFragment = touchesFrameEdge && areaRatio < 0.22 && (aspectRatio > 0.78 || heightRatio < 0.34);
   if (edgeFragment) return false;
 
   const slenderBody = aspectRatio <= 0.66 && heightRatio >= 0.16 && areaRatio >= 0.01 && score >= 0.46;
   const upperBody = aspectRatio <= 0.85 && heightRatio >= 0.27 && areaRatio >= 0.035 && score >= 0.52;
-  const closeBody = aspectRatio <= 0.82 && heightRatio >= 0.5 && areaRatio >= 0.12 && score >= 0.68;
-  const strongPartialBody = aspectRatio <= 0.78 && heightRatio >= 0.24 && areaRatio >= 0.025 && score >= 0.84;
+  const closeBody = aspectRatio <= 1.0 && heightRatio >= 0.38 && areaRatio >= 0.09 && score >= 0.58;
+  const strongPartialBody = aspectRatio <= 0.92 && heightRatio >= 0.24 && areaRatio >= 0.025 && score >= 0.82;
 
   return slenderBody || upperBody || closeBody || strongPartialBody;
-}
-
-function canStartNewPersonTrack(
-  prediction: PersonDetection,
-  videoWidth: number,
-  videoHeight: number
-) {
-  if (prediction.source === 'face') return true;
-
-  const {
-    score,
-    areaRatio,
-    heightRatio,
-    widthRatio,
-    aspectRatio,
-    touchesFrameEdge
-  } = getDetectionMetrics(prediction, videoWidth, videoHeight);
-
-  const tallBody = aspectRatio <= 0.56 && heightRatio >= 0.36 && areaRatio >= 0.032 && score >= 0.58;
-  const clearTorso = aspectRatio <= 0.68 && heightRatio >= 0.52 && areaRatio >= 0.075 && score >= 0.68;
-  const closeConfirmedBody = aspectRatio <= 0.7 && heightRatio >= 0.72 && areaRatio >= 0.22 && score >= 0.82;
-
-  if (touchesFrameEdge && widthRatio > 0.3 && heightRatio < 0.78) return false;
-  if (aspectRatio > 0.72) return false;
-
-  return tallBody || clearTorso || closeConfirmedBody;
-}
-
-function canUpdateTrackWithDetection(
-  prediction: PersonDetection,
-  track: TrackedObject,
-  videoWidth: number,
-  videoHeight: number
-) {
-  if (prediction.source === 'face') return true;
-
-  const metrics = getDetectionMetrics(prediction, videoWidth, videoHeight);
-  const stats = overlapStats(prediction.bbox, track.bbox);
-  const trackStats = boxStats(track.bbox);
-  const trackAspect = track.bbox[2] / Math.max(1, track.bbox[3]);
-  const areaRatioToTrack = metrics.areaRatio / Math.max(0.001, trackStats.area / Math.max(1, videoWidth * videoHeight));
-  const centerMovedTooMuch = stats.distance > trackStats.diagonal * 0.38 && stats.iou < 0.12;
-  const likelyArmOrHand = metrics.aspectRatio > 0.78
-    || (metrics.touchesFrameEdge && metrics.heightRatio < 0.72)
-    || (areaRatioToTrack > 2.4 && metrics.heightRatio < 0.85)
-    || (metrics.aspectRatio > trackAspect * 1.55 && stats.iou < 0.22);
-
-  if (likelyArmOrHand) return false;
-  if (centerMovedTooMuch && metrics.score < 0.82) return false;
-
-  return true;
 }
 
 function supportsExistingTrack(
@@ -744,37 +661,6 @@ export function CameraTracker({
       matches.forEach(({ trackId, predIdx }) => {
         const track = currentTracked.get(trackId)!;
         const pred = lastPredictions[predIdx];
-        const canUseMeasurement = canUpdateTrackWithDetection(pred, track, canvas.width, canvas.height);
-        if (!canUseMeasurement) {
-          const predicted = predictedTracks.find(item => item.id === trackId);
-          if (!predicted) return;
-          const center = getCenter(predicted.bbox);
-          const path = [...track.path, [center.x, center.y] as [number, number]];
-          if (path.length > 40) path.shift();
-          const trackMotionScore = motionDetectorRef.current?.getBoxMotionScore(predicted.bbox, canvas.width, canvas.height) || 0;
-          const keepAlive = supportsExistingTrack(pred, predicted.bbox)
-            || supportsExistingTrack(pred, track.bbox)
-            || trackMotionScore > TRACK_MOTION_SUPPORT_THRESHOLD;
-          const nextLostFrames = track.lostFrames + 1;
-          if (!keepAlive && (nextLostFrames > MAX_LOST_FRAMES || now - track.lastSeen >= MAX_TIME_LOST_MS)) {
-            stationaryRef.current.delete(trackId);
-            ['restricted', 'loitering', 'offHours'].forEach(type => {
-              ruleStateRef.current.delete(`${trackId}:${type}`);
-            });
-            return;
-          }
-
-          newTracked.set(trackId, {
-            ...track,
-            bbox: predicted.bbox,
-            path,
-            lastSeen: keepAlive ? now : track.lastSeen,
-            lostFrames: keepAlive ? Math.min(nextLostFrames, 8) : nextLostFrames,
-            score: keepAlive ? Math.max(track.score * 0.96, pred.score * 0.65) : track.score
-          });
-          return;
-        }
-
         const [px, py, pw, ph] = pred.bbox;
         const bbox: [number, number, number, number] = [
           track.filters[0].update(px),
@@ -800,7 +686,6 @@ export function CameraTracker({
 
       unassignedPredictions.forEach(predIdx => {
         const pred = lastPredictions[predIdx];
-        if (!canStartNewPersonTrack(pred, canvas.width, canvas.height)) return;
         if (shouldSuppressNewTrack(pred, currentTracked, predictedTracks, now)) return;
 
         const [px, py, pw, ph] = pred.bbox;
@@ -844,18 +729,13 @@ export function CameraTracker({
           const occlusionSupport = lastOcclusionSupportPredictions.find(prediction => (
             supportsExistingTrack(prediction, predicted.bbox) || supportsExistingTrack(prediction, track.bbox)
           ));
-          const trackMotionScore = motionDetectorRef.current?.getBoxMotionScore(predicted.bbox, canvas.width, canvas.height) || 0;
-          const motionSupport = track.hitStreak >= MIN_HITS_TO_DISPLAY
-            && track.lostFrames < MAX_LOST_FRAMES
-            && trackMotionScore > TRACK_MOTION_SUPPORT_THRESHOLD;
-          const hasOcclusionSupport = Boolean(occlusionSupport) || motionSupport;
 
           newTracked.set(trackId, {
             ...track,
             bbox: predicted.bbox,
             path,
-            lastSeen: hasOcclusionSupport ? now : track.lastSeen,
-            lostFrames: hasOcclusionSupport ? Math.min(lostFrames, 8) : lostFrames,
+            lastSeen: occlusionSupport ? now : track.lastSeen,
+            lostFrames: occlusionSupport ? Math.min(lostFrames, 8) : lostFrames,
             score: occlusionSupport ? Math.max(track.score * 0.96, occlusionSupport.score * 0.7) : track.score
           });
         } else {
