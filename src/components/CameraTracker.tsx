@@ -23,11 +23,8 @@ export interface SecurityAlert {
   timestamp: number;
 }
 
-type PersonDetectionSource = 'body' | 'face';
-
 interface PersonDetection extends cocoSsd.DetectedObject {
   bbox: [number, number, number, number];
-  source: PersonDetectionSource;
 }
 
 interface DetectionModels {
@@ -105,13 +102,6 @@ function isPointInsideZone(point: { x: number; y: number }, zone: RestrictedZone
     && point.x <= zone.x + zone.width
     && point.y >= zone.y
     && point.y <= zone.y + zone.height;
-}
-
-function isPointInsideBox(point: { x: number; y: number }, box: [number, number, number, number]) {
-  return point.x >= box[0]
-    && point.x <= box[0] + box[2]
-    && point.y >= box[1]
-    && point.y <= box[1] + box[3];
 }
 
 function normalizeZone(zone: RestrictedZone): RestrictedZone {
@@ -228,50 +218,8 @@ function faceToPersonDetection(
   return {
     bbox: [x1, y1, x2 - x1, y2 - y1],
     class: 'person',
-    score: Math.max(confidence, 0.82),
-    source: 'face'
+    score: Math.max(confidence, 0.82)
   };
-}
-
-function hasFaceSupport(
-  bodyBox: [number, number, number, number],
-  faceDetections: PersonDetection[]
-) {
-  return faceDetections.some(face => {
-    const faceCenter = getCenter(face.bbox);
-    const stats = overlapStats(bodyBox, face.bbox);
-    return isPointInsideBox(faceCenter, bodyBox) || stats.iou > 0.08 || stats.secondContainment > 0.45;
-  });
-}
-
-function isHumanLikeBodyDetection(
-  prediction: PersonDetection,
-  videoWidth: number,
-  videoHeight: number,
-  faceDetections: PersonDetection[]
-) {
-  const [x, y, width, height] = prediction.bbox;
-  const score = prediction.score || 0;
-  const minFrameDimension = Math.max(1, Math.min(videoWidth, videoHeight));
-  const areaRatio = (width * height) / Math.max(1, videoWidth * videoHeight);
-  const heightRatio = height / Math.max(1, videoHeight);
-  const aspectRatio = width / Math.max(1, height);
-  const touchesFrameEdge = x <= 2 || y <= 2 || x + width >= videoWidth - 2 || y + height >= videoHeight - 2;
-
-  if (hasFaceSupport(prediction.bbox, faceDetections)) return true;
-  if (width < minFrameDimension * 0.035 || height < minFrameDimension * 0.085) return false;
-  if (heightRatio < 0.16 && score < 0.72) return false;
-  if (areaRatio < 0.012 && score < 0.76) return false;
-
-  const compactObject = aspectRatio > 0.72 && heightRatio < 0.42 && areaRatio < 0.16;
-  const wideObject = aspectRatio > 1.05;
-  const smallEdgeFragment = touchesFrameEdge && areaRatio < 0.08 && heightRatio < 0.32;
-
-  if (compactObject && score < 0.86) return false;
-  if (wideObject && score < 0.92) return false;
-  if (smallEdgeFragment && score < 0.9) return false;
-
-  return true;
 }
 
 function shouldSuppressNewTrack(
@@ -578,22 +526,15 @@ export function CameraTracker({
         ]);
         if (!isActive) return;
 
-        const facePersonPredictions = facePredictions
-          .map(face => faceToPersonDetection(face, canvas.width, canvas.height))
-          .filter((prediction): prediction is PersonDetection => Boolean(prediction));
         const personPredictions = objectPredictions
             .filter(prediction => prediction.class === 'person' && prediction.score > PERSON_CONFIDENCE_THRESHOLD)
             .map(prediction => ({
               ...prediction,
-              bbox: prediction.bbox as [number, number, number, number],
-              source: 'body' as const
-            }))
-            .filter(prediction => isHumanLikeBodyDetection(
-              prediction,
-              canvas.width,
-              canvas.height,
-              facePersonPredictions
-            ));
+              bbox: prediction.bbox as [number, number, number, number]
+            }));
+        const facePersonPredictions = facePredictions
+          .map(face => faceToPersonDetection(face, canvas.width, canvas.height))
+          .filter((prediction): prediction is PersonDetection => Boolean(prediction));
 
         lastPredictions = mergePersonDetections([...personPredictions, ...facePersonPredictions]);
       }
